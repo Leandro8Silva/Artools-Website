@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html class="scroll-smooth" lang="pt-BR">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Artools Precision Pen</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <!-- Iconify -->
+    <script src="https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js"></script>
+
+    <!-- Tailwind CSS (via CDN for development) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Lenis & GSAP -->
+    <script src="https://unpkg.com/@studio-freight/lenis@1.0.34/dist/lenis.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        accent: '#CCFF00',
+                    },
+                    animation: {
+                        'shimmer': 'shimmer 2s infinite',
+                        'spin-slow': 'spin 8s linear infinite',
+                        'marquee': 'marquee 30s linear infinite',
+                    },
+                    keyframes: {
+                        shimmer: {
+                            '0%': { transform: 'translateX(-100%) skewX(-15deg)' },
+                            '100%': { transform: 'translateX(200%) skewX(-15deg)' },
+                        },
+                        marquee: {
+                            '0%': { transform: 'translateX(0)' },
+                            '100%': { transform: 'translateX(-50%)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #FAFAFA;
+            color: #111111;
+            overflow-x: hidden;
+            /* Hide default scrollbar for aesthetics, lenis handles scrolling */
+            scrollbar-width: none; 
+        }
+        body::-webkit-scrollbar {
+            display: none;
+        }
+
+        html.lenis {
+          height: auto;
+        }
+        .lenis.lenis-smooth {
+          scroll-behavior: auto !important;
+        }
+        .lenis.lenis-smooth [data-lenis-prevent] {
+          overscroll-behavior: contain;
+        }
+        .lenis.lenis-stopped {
+          overflow: hidden;
+        }
+        .lenis.lenis-scrolling iframe {
+          pointer-events: none;
+        }
+
+        /* Base Reveal Animation Elements (GSAP will handle the main entrance, but keep classes for structure) */
+        .text-reveal-wrapper {
+            overflow: hidden;
+            display: inline-block;
+            vertical-align: bottom;
+        }
+        .text-reveal-content {
+            display: block;
+        }
+
+        /* Button Beam/Glow (from design system) */
+        .btn-beam {
+            position: relative;
+            display: inline-flex;
+            overflow: hidden;
+            border-radius: 9999px;
+            padding: 2px;
+            background: #111;
+            color: #fff;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .btn-beam::before {
+            content: '';
+            position: absolute;
+            top: -50%; left: -50%; width: 200%; height: 200%;
+            background: conic-gradient(from 0deg, transparent 0 340deg, rgba(255,255,255,0.8) 360deg);
+            animation: spin 2.5s linear infinite;
+            z-index: 0;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .btn-beam:hover::before { opacity: 1; }
+        
+        .btn-beam-inner {
+            background: #111;
+            border-radius: 9999px;
+            position: relative;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 2rem;
+            overflow: hidden;
+            font-weight: 500;
+            font-size: 0.875rem;
+        }
+        .btn-beam-inner::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transform: translateX(-100%) skewX(-15deg);
+        }
+        .btn-beam:hover .btn-beam-inner::after {
+            animation: shimmer 1.5s infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        @keyframes shimmer {
+            0% { transform: translateX(-100%) skewX(-15deg); }
+            100% { transform: translateX(200%) skewX(-15deg); }
+        }
+
+        .glass-badge {
+            background: rgba(255,255,255,0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0,0,0,0.05);
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);
+        }
+
+        /* Loading Screen */
+        #loader {
+            position: fixed;
+            inset: 0;
+            background: #FAFAFA;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            transition: opacity 0.8s ease-out;
+        }
+        .loader-progress {
+            width: 200px;
+            height: 2px;
+            background: #E5E7EB;
+            margin-top: 1rem;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .loader-bar {
+            height: 100%;
+            width: 0%;
+            background: #111;
+            transition: width 0.2s ease;
+        }
+
+        /* Video Masking for a cleaner look */
+        #hero-video {
+            /* mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent); */
+        }
+    </style>
+</head>
+
+<body class="antialiased bg-[#FAFAFA] selection:bg-stone-800 selection:text-white">
+
+    <!-- Loading Screen -->
+    <div id="loader">
+        <div class="flex items-center gap-2 group cursor-pointer text-stone-900">
+            <iconify-icon class="text-3xl animate-[spin_8s_linear_infinite]" icon="solar:pen-new-square-bold-duotone"></iconify-icon>
+            <span class="font-bold tracking-tighter text-2xl">ARTOOLS</span>
+        </div>
+        <div class="loader-progress">
+            <div id="loader-bar" class="loader-bar"></div>
+        </div>
+        <span id="loader-text" class="text-xs font-mono text-stone-500 mt-3 tracking-widest uppercase">Preparando experiência...</span>
+    </div>
+
+    <!-- Main Container -->
+    <div class="max-w-[1400px] mx-auto relative h-0">
+        <!-- Navigation -->
+        <header class="absolute top-0 left-0 w-full z-50 nav-load px-4 md:px-6 py-5 flex justify-between items-center opacity-0 -translate-y-4" id="main-nav">
+            <div class="flex items-center gap-2 group cursor-pointer">
+                <iconify-icon class="text-2xl text-stone-900" icon="solar:pen-new-square-bold-duotone"></iconify-icon>
+                <span class="font-bold tracking-tighter text-lg text-stone-900">ARTOOLS</span>
+            </div>
+            <div class="flex items-center gap-6">
+                <a class="text-xs font-mono font-medium tracking-widest uppercase text-stone-500 hover:text-stone-900 transition-colors" href="#">Visão Geral</a>
+                <a class="text-xs font-mono font-medium tracking-widest uppercase text-stone-500 hover:text-stone-900 transition-colors hidden md:block" href="#">Design</a>
+                <div class="btn-beam hidden sm:inline-flex">
+                    <div class="btn-beam-inner py-1.5 px-4 text-xs">
+                        Comprar
+                    </div>
+                </div>
+            </div>
+        </header>
+    </div>
+
+    <!-- Scrollable Space -->
+    <div class="h-[600vh] relative" id="hero-scroll-container">
+        <!-- Sticky Viewport -->
+        <div class="sticky top-0 h-screen w-full overflow-hidden flex items-center bg-[#FAFAFA]">
+            
+            <!-- Video Background -->
+            <div class="absolute inset-0 w-full h-full flex items-center justify-center z-0 pointer-events-none">
+                <video id="hero-video" class="w-full h-full object-cover md:object-contain scale-[1.2] opacity-0" muted playsinline preload="auto">
+                    <!-- Updated video path -->
+                    <source src="./assets/raw_files/video2.mp4" type="video/mp4">
+                    Seu navegador não suporta vídeos.
+                </video>
+            </div>
+
+            <!-- Content Grid Overlay -->
+            <div class="relative z-10 w-full max-w-[1400px] mx-auto px-6 grid grid-cols-1 md:grid-cols-12 h-full pointer-events-none">
+                
+                <!-- Left Column: Typography & CTAs -->
+                <div class="col-span-1 md:col-span-5 flex flex-col justify-center h-full pointer-events-auto pb-20 md:pb-0 z-20">
+                    <div class="flex items-center gap-3 mb-6 opacity-0 translate-y-4" id="hero-badge">
+                        <span class="w-2 h-2 rounded-full bg-stone-900 animate-pulse"></span>
+                        <span class="text-xs font-mono uppercase tracking-[0.2em] text-stone-500">A nova geração</span>
+                    </div>
+                    
+                    <h1 class="text-5xl md:text-7xl lg:text-[5.5rem] font-semibold tracking-tighter leading-[0.9] text-stone-900 mb-8" id="hero-title">
+                        <span class="text-reveal-wrapper block"><span class="text-reveal-content hero-text-line">A caneta</span></span>
+                        <span class="text-reveal-wrapper block"><span class="text-reveal-content hero-text-line text-stone-400 font-light">mais tecnológica</span></span>
+                        <span class="text-reveal-wrapper block"><span class="text-reveal-content hero-text-line">do mundo.</span></span>
+                    </h1>
+
+                    <p class="text-lg text-stone-500 max-w-sm mb-10 opacity-0 translate-y-4 font-light leading-relaxed" id="hero-desc">
+                        Precisão absoluta e design minimalista. Explore a Artools Precision Pen através do scroll.
+                    </p>
+                    
+                    <div class="flex flex-wrap items-center gap-6 opacity-0 translate-y-4" id="hero-ctas">
+                        <div class="btn-beam">
+                            <div class="btn-beam-inner">
+                                Comprar Agora
+                                <iconify-icon class="text-lg" icon="solar:bag-bold-duotone"></iconify-icon>
+                            </div>
+                        </div>
+                        <a href="#" class="inline-flex items-center gap-2 text-sm font-medium border border-stone-300 rounded-full px-6 py-3 hover:bg-stone-900 hover:text-white hover:border-stone-900 transition-all duration-300 group bg-white/50 backdrop-blur-sm">
+                            Explorar
+                            <iconify-icon class="text-lg text-stone-400 group-hover:text-white transition-colors" icon="solar:arrow-right-up-linear"></iconify-icon>
+                        </a>
+                    </div>
+                </div>
+                
+                <!-- Right Column: Specs & Indicators -->
+                <div class="hidden md:flex col-span-3 col-start-10 flex-col justify-center items-end h-full text-right pointer-events-auto z-20 gap-16">
+                    
+                    <!-- Spec 1 -->
+                    <div class="spec-item opacity-0 translate-x-4">
+                        <h4 class="text-3xl font-medium tracking-tight text-stone-900">4096</h4>
+                        <span class="text-xs font-mono text-stone-500 mt-1 block uppercase tracking-widest">Níveis de Pressão</span>
+                    </div>
+
+                    <!-- Spec 2 -->
+                    <div class="spec-item opacity-0 translate-x-4">
+                        <h4 class="text-3xl font-medium tracking-tight text-stone-900">12h</h4>
+                        <span class="text-xs font-mono text-stone-500 mt-1 block uppercase tracking-widest">Bateria Contínua</span>
+                    </div>
+
+                    <!-- Spec 3 -->
+                    <div class="spec-item opacity-0 translate-x-4">
+                        <h4 class="text-3xl font-medium tracking-tight text-stone-900">9g</h4>
+                        <span class="text-xs font-mono text-stone-500 mt-1 block uppercase tracking-widest">Peso Balanceado</span>
+                    </div>
+
+                    <!-- Scroll Indicator -->
+                    <div class="flex flex-col items-center gap-3 mt-8 opacity-0" id="scroll-indicator">
+                        <span class="text-[10px] font-mono text-stone-400 uppercase tracking-widest" style="writing-mode: vertical-rl;">Scroll to explore</span>
+                        <div class="w-px h-16 bg-stone-200 relative overflow-hidden rounded-full">
+                            <div class="absolute top-0 left-0 w-full h-1/2 bg-stone-900 animate-[translateY_2s_ease-in-out_infinite]"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Extra space to continue scrolling if needed, or footer -->
+    <div class="h-screen bg-stone-900 text-stone-400 flex items-center justify-center relative z-20">
+        <div class="text-center">
+            <h2 class="text-4xl font-semibold tracking-tighter text-white mb-4">A perfeição em suas mãos.</h2>
+            <p class="font-mono text-sm uppercase tracking-widest">Design System - Next Gen</p>
+        </div>
+    </div>
+
+    <script>
+        // Register GSAP plugins
+        gsap.registerPlugin(ScrollTrigger);
+
+        // Initialize Lenis for smooth scrolling
+        const lenis = new Lenis({
+            duration: 1.2,
+            easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)), // https://www.desmos.com/calculator/brs54l4xou
+            direction: 'vertical',
+            gestureDirection: 'vertical',
+            smooth: true,
+            mouseMultiplier: 1,
+            smoothTouch: false,
+            touchMultiplier: 2,
+            infinite: false,
+        });
+
+        // Get scroll value
+        lenis.on('scroll', (e) => {
+            // Can be used to sync other things
+        });
+
+        function raf(time) {
+            lenis.raf(time);
+            requestAnimationFrame(raf);
+        }
+        requestAnimationFrame(raf);
+
+        // Connect Lenis to GSAP ScrollTrigger
+        lenis.on('scroll', ScrollTrigger.update);
+
+        gsap.ticker.add((time)=>{
+            lenis.raf(time * 1000);
+        });
+        gsap.ticker.lagSmoothing(0);
+
+        // --- Video Scrubbing Logic ---
+        const video = document.getElementById('hero-video');
+        const scrollContainer = document.getElementById('hero-scroll-container');
+        const loader = document.getElementById('loader');
+        const loaderBar = document.getElementById('loader-bar');
+        const loaderText = document.getElementById('loader-text');
+
+        let isVideoLoaded = false;
+
+        // Force load for Safari/iOS
+        video.load();
+
+        // Simulate a loader while video metadata is fetched
+        let loadProgress = 0;
+        const loaderInterval = setInterval(() => {
+            loadProgress += Math.random() * 10;
+            if (loadProgress > 90 && !isVideoLoaded) {
+                loadProgress = 90; // Wait for video to actually load
+            }
+            if (loadProgress >= 100) {
+                loadProgress = 100;
+                clearInterval(loaderInterval);
+                if(isVideoLoaded) startExperience();
+            }
+            loaderBar.style.width = `${loadProgress}%`;
+        }, 100);
+
+        // Ensure video is parsed before doing GSAP math
+        video.addEventListener("loadedmetadata", function() {
+            isVideoLoaded = true;
+            if(loadProgress >= 100) {
+                startExperience();
+            }
+        });
+
+        // Fallback if loadedmetadata doesn't fire (sometimes happens if video is cached or very small)
+        if (video.readyState >= 1) {
+            isVideoLoaded = true;
+        }
+        
+        setTimeout(() => {
+             // Failsafe in case video takes too long or metadata event is missed
+             if(!isVideoLoaded) {
+                 isVideoLoaded = true;
+                 loadProgress = 100;
+                 loaderBar.style.width = '100%';
+                 clearInterval(loaderInterval);
+                 startExperience();
+             }
+        }, 3000);
+
+        function startExperience() {
+            // Hide Loader
+            gsap.to(loader, {
+                opacity: 0,
+                duration: 0.8,
+                ease: "power2.inOut",
+                onComplete: () => {
+                    loader.style.display = "none";
+                    playEntryAnimations();
+                    setupScrollScrubbing();
+                }
+            });
+        }
+
+        function playEntryAnimations() {
+            const tl = gsap.timeline();
+
+            // Nav reveal
+            tl.to("#main-nav", {
+                opacity: 1,
+                y: 0,
+                duration: 1,
+                ease: "power3.out"
+            }, 0);
+
+            // Badge reveal
+            tl.to("#hero-badge", {
+                opacity: 1,
+                y: 0,
+                duration: 1,
+                ease: "power3.out"
+            }, 0.2);
+
+            // Title Reveal (Staggered lines)
+            tl.fromTo(".hero-text-line", {
+                y: "110%",
+                opacity: 0
+            }, {
+                y: "0%",
+                opacity: 1,
+                duration: 1.2,
+                stagger: 0.15,
+                ease: "power4.out"
+            }, 0.3);
+
+            // Description
+            tl.to("#hero-desc", {
+                opacity: 1,
+                y: 0,
+                duration: 1,
+                ease: "power3.out"
+            }, 0.8);
+
+            // CTAs
+            tl.to("#hero-ctas", {
+                opacity: 1,
+                y: 0,
+                duration: 1,
+                ease: "power3.out"
+            }, 1);
+
+            // Right Specs Stagger
+            tl.to(".spec-item", {
+                opacity: 1,
+                x: 0,
+                duration: 0.8,
+                stagger: 0.15,
+                ease: "power3.out"
+            }, 1);
+
+            // Scroll indicator
+            tl.to("#scroll-indicator", {
+                opacity: 1,
+                duration: 1,
+                ease: "power2.out"
+            }, 1.5);
+
+            // Video fade in softly
+            gsap.to(video, {
+                opacity: 1,
+                duration: 2,
+                ease: "power2.inOut"
+            });
+        }
+
+        function setupScrollScrubbing() {
+            // We need to map the scroll of `hero-scroll-container` to video time
+            const duration = video.duration || 5;
+            
+            // Make sure video is paused so it doesn't try to play while we scrub
+            video.pause();
+
+            // Optimization for video scrubbing: 
+            // 1. Use a proxy object instead of tweening video.currentTime directly
+            // 2. Use requestAnimationFrame to sync the update with browser paint cycles
+            // 3. Add a small scrub value (0.5 instead of true) to interpolate between frames,
+            //    which greatly smooths out the experience when video decoding is lagging.
+            const videoProxy = { currentTime: 0 };
+            let rafId = null;
+
+            gsap.to(videoProxy, {
+                currentTime: duration,
+                ease: "none",
+                scrollTrigger: {
+                    trigger: scrollContainer,
+                    start: "top top",
+                    end: "bottom bottom",
+                    scrub: 0.5 // Suavização (inertia) ajuda a mascarar lentidão de decodificação do vídeo
+                },
+                onUpdate: () => {
+                    // Evita múltiplas chamadas de atualização no mesmo frame
+                    if (rafId) cancelAnimationFrame(rafId);
+                    rafId = requestAnimationFrame(() => {
+                        if (video.duration) {
+                            video.currentTime = videoProxy.currentTime;
+                        }
+                    });
+                }
+            });
+
+            // Parallax out the text as we scroll down
+            gsap.to("#hero-title, #hero-desc, #hero-ctas, #hero-badge", {
+                y: -100,
+                opacity: 0,
+                ease: "none",
+                scrollTrigger: {
+                    trigger: scrollContainer,
+                    start: "top top",
+                    end: "top -50%", // Disappear halfway through the first screen
+                    scrub: true
+                }
+            });
+
+            // Optional: Specs parallax out slightly later
+            gsap.to(".spec-item, #scroll-indicator", {
+                x: 50,
+                opacity: 0,
+                ease: "none",
+                scrollTrigger: {
+                    trigger: scrollContainer,
+                    start: "top top",
+                    end: "top -60%",
+                    scrub: true
+                }
+            });
+        }
+    </script>
+</body>
+</html>
